@@ -2,71 +2,53 @@ import os
 import timm
 import fastai
 from fastai.vision.all import *
+from fastai.callback.all import *
 from timm import create_model
 from fastai.vision.learner import _update_first_layer
 import torchvision
 import torch.backends.cudnn as cudnn
 import paths as p
-import helper_functions as hf
-import model_helpers as mh
+import triplet_loss as tl
+from fastai.vision.models import resnet18, resnet34, resnet50, resnet101, resnet152, convnext_tiny, convnext_small
 
-def create_timm_body(arch:str, pretrained=True, cut=None, n_in=3):
-    "Creates a body from any model in the `timm` library."
-    model = create_model(arch, pretrained=True, num_classes=0, global_pool='')
-    _update_first_layer(model, n_in, pretrained)
-    if cut is None:
-        ll = list(enumerate(model.children()))
-        cut = next(i for i,o in reversed(ll) if has_pool_type(o))
-    if isinstance(cut, int): return nn.Sequential(*list(model.children())[:cut])
-    elif callable(cut): return cut(model)
-    else: raise NamedError("cut must be either integer or function")
 
-def create_timm_model(arch:str, n_out, cut=None, pretrained=True, n_in=3, init=nn.init.kaiming_normal_, custom_head=None,
-                     concat_pool=True, **kwargs):
-    "Create custom architecture using `arch`, `n_in` and `n_out` from the `timm` library"
-    body = create_timm_body(arch, pretrained, None, n_in)
-    if custom_head is None:
-        nf = num_features_model(nn.Sequential(*body.children()))
-        head = create_head(nf, n_out, concat_pool=concat_pool, **kwargs)
-    else: head = custom_head
-    model = nn.Sequential(body, head)
-    if init is not None: apply_init(model[1], init)
-    return model
+def create_model_object(model_name):
+    if model_name == 'resnet18':
+        return resnet18()
+    elif model_name == 'resnet34':
+        return resnet34()
+    elif model_name == 'resnet50':
+        return resnet50()
+    elif model_name == 'resnet101':
+        return resnet101()
+    elif model_name == 'resnet152':
+        return resnet152()
+    elif model_name == 'convnext_tiny':
+        return convnext_tiny()
+    elif model_name == 'convnext_small':
+        return convnext_small()
+    else:
+        raise ValueError("Invalid model name.")
 
-def check_freeze():
-    vision_learner.freeze()
-    frozen = filter(lambda p: not p.requires_grad, vision_learner.model.parameters())
-    frozen = sum([np.prod(p.size()) for p in unfrozen_params])
-    model_parameters = filter(lambda p: p.requires_grad, vision_learner.model.parameters())
-    unfrozen = sum([np.prod(p.size()) for p in model_parameters])
 
 def train_model(dls, model, n_out, tune_no, lr=0.1, loss_func=None, opt_func=Adam, metrics="accuracy"):
-    model = create_timm_model(model, n_out, default_split, pretrained=True)
-    learn  = vision_learner(dls, model, normalize=True, n_out=5, loss_func=loss_func, opt_func=opt_func, lr=0.1)
-    model.fine_tune(tune_no, cbs=ShowGraphCallback())
+    learn  = vision_learner(dls, model, normalize=True, n_out=n_out, loss_func=loss_func, opt_func=opt_func, lr=0.1)
+
+    # Check the data loaders
+    for batch in dls.train:
+        x, y = batch
+        # Ensure x and y have expected shapes
+        assert x.ndim in {4}, f"Unexpected x shape: {x.shape}"
+        assert y.ndim == 1, f"Unexpected y shape: {y.shape}"
+        assert x.size(0) == y.size(0), f"Batch size mismatch: x.size(0)={x.size(0)}, y.size(0)={y.size(0)}"
+        print(f"Batch x shape: {x.shape}, Batch y shape: {y.shape}")
+
+    learn.fine_tune(tune_no, cbs=ShowGraphCallback())
+    
+    # Shows all the training steps and where callbacks are located
+    print("SHOW TRAINING LOOP")
+    model.show_training_loop()
     return learn
-    # print("SHOW TRAINING LOOP")
-    # model.show_training_loop()
-
-    # Get validation metrics
-    if metrics is not None:
-        if hasattr(dls, 'valid'):
-            val_results = model.show_results(ds_idx=1, dl=dls.valid)
-            print("Validation Metrics:")
-            if val_results is not None:
-                for metric in metrics:
-                    if metric in val_results:
-                        print(f"{metric}: {val_results[metric]}")
-                    else:
-                        print(f"Metric '{metric}' not found in validation results.")
-            else:
-                print("No validation results.")
-        else:
-            print("Validation dataset not found. Metrics cannot be calculated.")
-    else:
-        print("No metrics specified.")
-
-    return model
 
 def get_model_params(trained_model):
     # Accessing model parameters
@@ -81,3 +63,34 @@ def evaluate_model(model):
 def save_model(model, path):
     model_path = os.path.join(path, "model.pt")
     torch.save(model, model_path)
+
+
+# def triplet_loss_learner(dls, model, n_out, tune_no, lr=0.1, opt_func=Adam, metrics="accuracy", cbs=None):
+
+#     # Create the learner with the custom TripletLoss
+#     learn = Learner(dls, model, loss_func=tl.TripletLoss(margin=1.0), 
+#                     opt_func=opt_func, lr=lr, cbs=cbs, metrics=[metrics])
+
+#     # Fine-tuning the model
+#     learn.fine_tune(tune_no, cbs=[ShowGraphCallback()] + (cbs or []))
+    
+#     return learn
+
+def triplet_loss_learner(dls, model, n_out, tune_no, lr=0.1, loss_func=None, opt_func=Adam, metrics="accuracy"):
+    learn  = vision_learner(dls, model, normalize=True, n_out=n_out, loss_func=tl.TripletLoss(margin=1.0), opt_func=opt_func, lr=0.1)
+
+    # Check the data loaders
+    for batch in dls.train:
+        x, y = batch
+        # Ensure x and y have expected shapes
+        assert x.ndim in {4}, f"Unexpected x shape: {x.shape}"
+        assert y.ndim == 1, f"Unexpected y shape: {y.shape}"
+        assert x.size(0) == y.size(0), f"Batch size mismatch: x.size(0)={x.size(0)}, y.size(0)={y.size(0)}"
+        print(f"Batch x shape: {x.shape}, Batch y shape: {y.shape}")
+
+    learn.fine_tune(tune_no, cbs=ShowGraphCallback())
+    
+    # Shows all the training steps and where callbacks are located
+    print("SHOW TRAINING LOOP")
+    model.show_training_loop()
+    return learn
