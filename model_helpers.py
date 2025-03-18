@@ -1,15 +1,13 @@
 import os
-import timm
-import fastai
 from fastai.vision.all import *
-from fastai.callback.all import *
-from timm import create_model
 from fastai.vision.learner import _update_first_layer
-import torchvision
-import torch.backends.cudnn as cudnn
+import torch
+from fastai.callback.tracker import SaveModelCallback
+from fastai.vision.all import *
 import paths as p
 import triplet_loss as tl
 from fastai.vision.models import resnet18, resnet34, resnet50, resnet101, resnet152, convnext_tiny, convnext_small
+from torchvision.models import ConvNeXt_Tiny_Weights
 
 
 def create_model_object(model_name):
@@ -31,8 +29,34 @@ def create_model_object(model_name):
         raise ValueError("Invalid model name.")
 
 
-def train_model(dls, model, n_out, tune_no, lr=0.1, loss_func=None, opt_func=Adam, metrics="accuracy"):
-    learn  = vision_learner(dls, model, normalize=True, n_out=n_out, loss_func=loss_func, opt_func=opt_func, lr=0.1)
+def train_model(dls, model, n_out, tune_no, lr=0.1, loss_func=None, metrics=[accuracy], cbs=None, model_path="model.pth", resume=False):
+
+    """
+    Train a model with optional checkpoint loading for resuming training.
+
+    Args:
+        dls: DataLoaders object.
+        model: Model architecture.
+        n_out: Number of output classes.
+        tune_no: Number of fine-tuning epochs.
+        lr: Learning rate.
+        loss_func: Loss function.
+        opt_func: Optimizer function.
+        metrics: Training metrics.
+        cbs: List of callbacks.
+        model_path: Path to save/load the model checkpoint.
+        resume: Whether to resume training from a saved checkpoint.
+
+    Returns:
+        Trained model.
+    """
+    if cbs is None:
+        cbs = []
+    
+    learn = vision_learner(dls, model, normalize=True, n_out=n_out, loss_func=loss_func, cbs=cbs, metrics=metrics)
+
+    # Remove .pth from model_path for fastai
+    model_name = os.path.splitext(os.path.basename(model_path))[0]
 
     # Check the data loaders
     for batch in dls.train:
@@ -43,12 +67,32 @@ def train_model(dls, model, n_out, tune_no, lr=0.1, loss_func=None, opt_func=Ada
         assert x.size(0) == y.size(0), f"Batch size mismatch: x.size(0)={x.size(0)}, y.size(0)={y.size(0)}"
         print(f"Batch x shape: {x.shape}, Batch y shape: {y.shape}")
 
-    learn.fine_tune(tune_no, cbs=ShowGraphCallback())
+    # Load previous checkpoint if resuming training
+    if resume and os.path.exists(model_path):
+        print(f"Resuming training from: {model_path}")
+        learn.load(model_path.replace(".pth", ""))  # Remove .pth for FastAI loading
+    else:
+        print("Starting fresh training.")
+
+    # Include SaveModelCallback to save best model
+    # learn.fine_tune(tune_no, base_lr=slice(lr/10, lr), 
+    #             cbs=[ShowGraphCallback(), SaveModelCallback(fname=model_name, with_opt=True)] + cbs)
     
-    # Shows all the training steps and where callbacks are located
-    print("SHOW TRAINING LOOP")
-    model.show_training_loop()
-    return learn
+    if lr is None:
+        raise ValueError("Learning rate (lr) cannot be None. Please specify a valid value.")
+
+    #If don't want progresive LR
+    learn.fine_tune(tune_no, base_lr=lr, 
+                cbs=[ShowGraphCallback(), SaveModelCallback(fname=model_name, with_opt=True)] + cbs)
+
+    #learn.fine_tune(tune_no, lr_max=lr, cbs=[ShowGraphCallback(), SaveModelCallback(fname=model_name, with_opt=True)] + cbs)
+
+    # Save final model
+    learn.export(model_path.replace(".pth", ".pkl"))  # Save for inference
+    torch.save(learn.model.state_dict(), model_path)  # Save weights
+    print(f"Model saved at {model_path}")
+
+    return learn.model
 
 def get_model_params(trained_model):
     # Accessing model parameters
@@ -63,34 +107,3 @@ def evaluate_model(model):
 def save_model(model, path):
     model_path = os.path.join(path, "model.pt")
     torch.save(model, model_path)
-
-
-# def triplet_loss_learner(dls, model, n_out, tune_no, lr=0.1, opt_func=Adam, metrics="accuracy", cbs=None):
-
-#     # Create the learner with the custom TripletLoss
-#     learn = Learner(dls, model, loss_func=tl.TripletLoss(margin=1.0), 
-#                     opt_func=opt_func, lr=lr, cbs=cbs, metrics=[metrics])
-
-#     # Fine-tuning the model
-#     learn.fine_tune(tune_no, cbs=[ShowGraphCallback()] + (cbs or []))
-    
-#     return learn
-
-def triplet_loss_learner(dls, model, n_out, tune_no, lr=0.1, loss_func=None, opt_func=Adam, metrics="accuracy"):
-    learn  = vision_learner(dls, model, normalize=True, n_out=n_out, loss_func=tl.TripletLoss(margin=1.0), opt_func=opt_func, lr=0.1)
-
-    # Check the data loaders
-    for batch in dls.train:
-        x, y = batch
-        # Ensure x and y have expected shapes
-        assert x.ndim in {4}, f"Unexpected x shape: {x.shape}"
-        assert y.ndim == 1, f"Unexpected y shape: {y.shape}"
-        assert x.size(0) == y.size(0), f"Batch size mismatch: x.size(0)={x.size(0)}, y.size(0)={y.size(0)}"
-        print(f"Batch x shape: {x.shape}, Batch y shape: {y.shape}")
-
-    learn.fine_tune(tune_no, cbs=ShowGraphCallback())
-    
-    # Shows all the training steps and where callbacks are located
-    print("SHOW TRAINING LOOP")
-    model.show_training_loop()
-    return learn

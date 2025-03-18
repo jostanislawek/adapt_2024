@@ -11,8 +11,6 @@ import helper_functions as hf
 CUDA_LAUNCH_BLOCKING=1
 
 def load_data():
-    # dls = ImageDataLoaders.from_folder(p.data_full, train="Training", valid="Validation",
-    #                                    item_tfms=Resize(224), bs=4, num_workers=0)
     dls = ImageDataLoaders.from_folder(p.data_full, train="Training", valid="Validation",
                                        item_tfms=Resize(224), bs=4)
     return dls
