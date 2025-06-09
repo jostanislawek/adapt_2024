@@ -50,7 +50,8 @@ class LoggingCallback(Callback):
         # Record a custom metric if provided (or you can compute one)
         # For example, if you have accuracy as a metric:
         if self.learn.recorder.metrics:
-            self.epoch_metrics.append(self.learn.recorder.metrics[-1][0].item())
+            self.epoch_metrics.append(self.learn.recorder.metrics[-1].item())
+
         # Log the current margin value if applicable
         current_margin = self.learn.loss_func.triplet_loss.margin
         self.epoch_margins.append(current_margin)
