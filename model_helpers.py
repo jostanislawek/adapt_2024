@@ -1,13 +1,15 @@
 import os
-from fastai.vision.all import *
-from fastai.vision.learner import _update_first_layer
+
 import torch
 from fastai.callback.tracker import SaveModelCallback
 from fastai.vision.all import *
+from fastai.vision.learner import _update_first_layer
+from fastai.vision.models import (convnext_small, convnext_tiny, resnet18,
+                                  resnet34, resnet50, resnet101, resnet152)
+from torchvision.models import ConvNeXt_Tiny_Weights
+
 import paths as p
 import triplet_loss as tl
-from fastai.vision.models import resnet18, resnet34, resnet50, resnet101, resnet152, convnext_tiny, convnext_small
-from torchvision.models import ConvNeXt_Tiny_Weights
 
 
 def create_model_object(model_name):

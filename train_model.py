@@ -1,12 +1,13 @@
 import os
+
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 os.environ['TORCH_USE_CUDA_DSA'] = '1'
+import numpy as np
 from fastai.vision.all import *
+from sklearn.model_selection import StratifiedKFold
+
 import helper_functions as hf
 import model_helpers as mh
-from sklearn.model_selection import StratifiedKFold
-import numpy as np
-
 
 """
 HOW TO TRAIN AND RESUME TRAINING

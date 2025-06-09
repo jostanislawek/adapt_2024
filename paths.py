@@ -1,5 +1,6 @@
 # Full dataset
-data_full = "/mnt/d/PhD/Images/Adaptation_Dataset/"
+data_full = "/mnt/d/PhD/Images/Adaptation_Dataset"
+data_full_train = "/mnt/d/PhD/Images/Adaptation_Dataset/Train"
 
 # Sample dataset
 data_train_sample = "/mnt/d/PhD/Images/Adaptation_Dataset_Sample"

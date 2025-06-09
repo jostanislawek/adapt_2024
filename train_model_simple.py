@@ -1,11 +1,12 @@
-import os
-import timm
+
 import fastai
-from fastai.vision.all import *
-import torchvision
+import timm
 import torch.backends.cudnn as cudnn
-import paths as p
+import torchvision
+from fastai.vision.all import *
+
 import helper_functions as hf
+import paths as p
 
 # Make cuda report the error where it actually occurs
 CUDA_LAUNCH_BLOCKING=1

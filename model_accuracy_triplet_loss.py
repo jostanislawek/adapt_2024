@@ -1,13 +1,18 @@
 import os
+from collections import defaultdict
+from datetime import datetime
+
+import numpy as np
 import torch
 from fastai.vision.all import *
+from sklearn.metrics.pairwise import cosine_similarity
+
 import helper_functions as hf
 import model_helpers as mh
+import paths as p
 import triplet_loss as tl
-import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
-from collections import defaultdict, Counter
 from triplet_loss import TripletModel
+
 
 def knn_eval(test_embeddings, test_labels, train_embeddings, train_labels):
     """
@@ -29,22 +34,42 @@ def knn_eval(test_embeddings, test_labels, train_embeddings, train_labels):
     per_class_correct = {k: defaultdict(int) for k in k_values}
     per_class_total = {k: defaultdict(int) for k in k_values}
 
+    from sklearn.utils import shuffle
+
+    # Shuffle embeddings and labels together
+    train_embeddings, train_labels = shuffle(train_embeddings, train_labels, random_state=42)
+    test_embeddings, test_labels = shuffle(test_embeddings, test_labels, random_state=42)
+
+
     # Loop over each test sample
     for i in range(len(test_embeddings)):
-        # Compute cosine similarities between the i-th test embedding and all training embeddings
-        similarities = cosine_similarity(test_embeddings[i].reshape(1, -1), train_embeddings).flatten()
-        # Sort indices by descending similarity (largest similarity first)
-        sorted_indices = np.argsort(similarities)[::-1]
+        # Compute Euclidean distances between the i-th test embedding and all training embeddings
+        distances = np.linalg.norm(test_embeddings[i] - train_embeddings, axis=1)
+        sorted_indices = np.argsort(distances)
+
+        # # Compute cosine similarities between the i-th test embedding and all training embeddings
+        # similarities = cosine_similarity(test_embeddings[i].reshape(1, -1), train_embeddings).flatten()
+        # sorted_indices = np.argsort(similarities)[::-1]
         
         # True label of the test sample
         true_label = test_labels[i]
-        
+
+        print("Unique test labels:", np.unique(test_labels))
+
+        from collections import Counter
+
+        print("Test label distribution:", Counter(test_labels))
+
+        print("Sample test labels:", test_labels[:50])
+        print("Random test labels:", np.random.choice(test_labels, size=50, replace=False))
+
+            
         # Evaluate for each k value
         for k in k_values:
             # Get the indices of the top k nearest neighbors
             knn_indices = sorted_indices[:k]
             # Retrieve their corresponding labels
-            knn_labels = [train_labels[idx] for idx in knn_indices]
+            knn_labels = train_labels[knn_indices] 
             # Use majority vote to decide the predicted label (ties return the first most common)
             predicted_label = Counter(knn_labels).most_common(1)[0][0]
             
@@ -55,6 +80,12 @@ def knn_eval(test_embeddings, test_labels, train_embeddings, train_labels):
             if predicted_label == true_label:
                 overall_correct[k] += 1
                 per_class_correct[k][true_label] += 1
+
+            for i in range(5):  # Check first 5 test cases
+                print(f"Test {i}: True Label = {test_labels[i]}")
+                print(f"Nearest Labels: {[train_labels[idx] for idx in sorted_indices[:3]]}")
+                print(f"Predicted Label: {predicted_label}")
+                print("-" * 30)
 
     # Calculate overall accuracy for each k
     overall_accuracy = {k: overall_correct[k] / len(test_labels) for k in k_values}
@@ -74,12 +105,13 @@ def knn_eval(test_embeddings, test_labels, train_embeddings, train_labels):
         print()  # For better readability between different k values
 
 if __name__ == "__main__":
+    print(datetime.now())
     hf.check_gpu()
     args = hf.parse_args()
     print(args)
 
     # Model path
-    MODEL_PATH = "/mnt/d/PhD/Models/Adaptation_2024/convnext_tiny/Triplet_Loss/model_convnext_tiny_data_mode_full_data_batch_size_4_tune_no_10_resume_False/"
+    MODEL_PATH = "/mnt/d/PhD/Models/Adaptation_2024/convnext_tiny/Triplet_Loss/model_convnext_tiny_data_mode_full_data_batch_size_4_tune_no_2260_resume_True/"
 
     # Ensure model path exists
     if not os.path.exists(MODEL_PATH):
@@ -90,7 +122,12 @@ if __name__ == "__main__":
     # Load test data
     print("Loading Test Data")
     dls = hf.load_data(args.data_mode)  # Load dataset
-    test_dl = dls.valid  # Extract only the test set
+    # test_dl = dls.valid  # Extract only the test set
+
+    test_folder = os.path.join(p.data_full, "Test")
+    class_counts = {cls: len(os.listdir(os.path.join(test_folder, cls))) for cls in os.listdir(test_folder)}
+
+    print("Test set class distribution:", class_counts)
 
     # Load the triplet model
     triplet_model_path = os.path.join(MODEL_PATH, "model.pt")
@@ -102,6 +139,9 @@ if __name__ == "__main__":
         triplet_model = torch.load(triplet_model_path)
         triplet_model = triplet_model.to("cuda")
         triplet_model.eval()
+
+        test_embeddings, test_labels = hf.get_all_test_embeddings(dls, triplet_model)
+        print(f"Extracted {len(test_labels)} test embeddings.")
 
         # Extract embeddings for test images
         test_embeddings, test_labels = [], []

@@ -1,17 +1,19 @@
 """This module contains all the functions which are used in multiple notebooks"""
-from torchvision import transforms
-import numpy as np
-import matplotlib.pyplot as plt
-from fastai.vision.all import *
 import argparse
-import paths as p
-from tqdm import tqdm
 import os
 import re
-from fastai.vision.all import *
-from sklearn.model_selection import StratifiedKFold
 from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+from fastai.vision.all import *
 from sklearn.manifold import TSNE
+from sklearn.model_selection import StratifiedKFold
+from torchvision import transforms
+from tqdm import tqdm
+
+import paths as p
+
 
 def check_gpu():
     """ Check the enviroment and torch version """
@@ -133,14 +135,12 @@ def load_data(data_type):
     dls: data loader object
     Return data in data loader object. """
 
-    print(p.data_train_sample)
-
     if data_type == 'sample':
         dls = ImageDataLoaders.from_folder(p.data_train_sample, train="Train", valid="Test",
-                                           item_tfms=Resize(224), bs=4, num_workers=0, drop_last=True)
+                                           item_tfms=Resize(224), bs=4, num_workers=0, drop_last=False)
     elif data_type == 'full_data':
         dls = ImageDataLoaders.from_folder(p.data_full, train="Train", valid="Test",
-                                           item_tfms=Resize(224), bs=24, num_workers=2, drop_last=True)
+                                           item_tfms=Resize(224), bs=4, num_workers=2, drop_last=False)
     else:
         raise ValueError("Invalid data type. Choose 'sample' or 'full_data'.")
     return dls
@@ -165,9 +165,11 @@ def load_data_crossval_stratified(args, data_mode, n_splits=5, fold_index=0):
     if data_mode == 'sample':
         data_path = Path(p.data_train_sample)  # Convert to Path
         batch_size = 4
+        print(data_path)
     elif data_mode == 'full_data':
         data_path = Path(p.data_full)  # Convert to Path
         batch_size = 24
+        print(data_path)
     else:
         raise ValueError(f"Invalid data type: {data_mode}. Choose 'sample' or 'full_data'.")
 
@@ -215,6 +217,23 @@ def load_data_crossval_stratified(args, data_mode, n_splits=5, fold_index=0):
 
     return {"train_dls": train_dls, "valid_dls": valid_dls}
 
+def get_all_test_embeddings(dls, model):
+    """ Extracts embeddings for all test images. """
+    test_dl = dls.valid  # Get the test dataloader
+    test_embeddings = []
+    test_labels = []
+
+    for batch in test_dl:
+        images, labels = batch
+        embeddings = model(images)  # Get embeddings using your model
+        test_embeddings.append(embeddings)
+        test_labels.append(labels)
+
+    # Convert to numpy arrays
+    test_embeddings = torch.cat(test_embeddings).detach().cpu().numpy()
+    test_labels = torch.cat(test_labels).detach().cpu().numpy()
+
+    return test_embeddings, test_labels
 
 def augment_data(dls, n_classes):
     "Apply augmentation and debug the DataLoader for invalid targets"

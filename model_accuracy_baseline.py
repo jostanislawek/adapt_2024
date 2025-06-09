@@ -1,11 +1,13 @@
 import os
+
+import numpy as np
 import torch
 from fastai.vision.all import *
+from sklearn.metrics.pairwise import cosine_similarity
+
 import helper_functions as hf
 import model_helpers as mh
 import triplet_loss as tl
-import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
 
 hf.check_gpu()
 args = hf.parse_args()
