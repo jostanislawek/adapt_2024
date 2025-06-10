@@ -193,7 +193,7 @@ if __name__ == "__main__":
 
     # Load full dataset (no split yet) - keep as a path
     full_dataset = tl.TripletDataset(
-        root_dir=p.data_train_sample_train, transform=transforms
+        root_dir=p.data_full_train, transform=transforms
     )
 
     info = full_dataset.get_dataset_info()
@@ -206,7 +206,7 @@ if __name__ == "__main__":
     numeric_labels = np.array([label_to_idx[label] for label in all_labels])
 
     # Create stratified splits using your numeric labels
-    n_splits = 2
+    n_splits = 5
     kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
 
     mlflow.set_experiment("TripletLoss_Embeddings")
