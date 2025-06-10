@@ -50,7 +50,7 @@ class LoggingCallback(Callback):
         # Record a custom metric if provided (or you can compute one)
         # For example, if you have accuracy as a metric:
         if self.learn.recorder.metrics:
-            self.epoch_metrics.append(self.learn.recorder.metrics[-1].item())
+            self.epoch_metrics.append(self.learn.recorder.metrics[-1])
 
         # Log the current margin value if applicable
         current_margin = self.learn.loss_func.triplet_loss.margin
@@ -132,19 +132,28 @@ class MLflowLoggerCallback(Callback):
 
     def after_epoch(self):
         epoch = self.epoch
+
         if self.learn.recorder.losses:
             train_loss = self.learn.recorder.losses[-1].item()
             mlflow.log_metric("train_loss", train_loss, step=epoch)
+
         if self.learn.recorder.values:
             valid_loss = self.learn.recorder.values[-1][0]
             mlflow.log_metric("valid_loss", valid_loss, step=epoch)
 
+            # Optional debugging
             print(f"Epoch {epoch} - Metric names: {self.learn.recorder.metric_names}")
             print(f"Epoch {epoch} - Metric values: {self.learn.recorder.values[-1]}")
 
-            for i, m in enumerate(self.learn.recorder.values[-1][1:]):
-                mlflow.log_metric(f"metric_{i}", m, step=epoch)
+            # Skip 'epoch', 'train_loss', and 'valid_loss' (first 3 entries)
+            metric_names = self.learn.recorder.metric_names[3:]
+            metric_values = self.learn.recorder.values[-1][1:]  # Start from valid_loss onward
+
+            for name, value in zip(metric_names, metric_values):
+                mlflow.log_metric(name, value, step=epoch)
+
         print(f"Epoch {epoch}: metrics logged.")
+
 
 
 def after_fit(self):
@@ -184,7 +193,7 @@ if __name__ == "__main__":
 
     # Load full dataset (no split yet) - keep as a path
     full_dataset = tl.TripletDataset(
-        root_dir=p.data_full_train, transform=transforms
+        root_dir=p.data_train_sample_train, transform=transforms
     )
 
     info = full_dataset.get_dataset_info()
@@ -197,8 +206,10 @@ if __name__ == "__main__":
     numeric_labels = np.array([label_to_idx[label] for label in all_labels])
 
     # Create stratified splits using your numeric labels
-    n_splits = 5
+    n_splits = 2
     kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+
+    mlflow.set_experiment("TripletLoss_Embeddings")
 
     for fold, (train_idx, valid_idx) in enumerate(
         kf.split(full_dataset.images, numeric_labels)
@@ -240,7 +251,7 @@ if __name__ == "__main__":
         # Initialize Triplet Model
         triplet_model = TripletModel(base_model, embedding_dim=128)
 
-        with mlflow.start_run():
+        with mlflow.start_run(run_name=f"{args.model}_fold_{fold}_margin_{args.margin}"):
 
             loss_func = tl.WrappedTripletLoss(model=triplet_model, margin=args.margin)
 
